@@ -8,8 +8,6 @@ const userRoutes = require("./routes/userRoutes");
 
 const milkBatchRoutes = require("./routes/milkBatchRoutes");
 
-const milkQualityRoutes = require("./routes/milkQualityRoutes");
-
 const app = express();
 
 app.use(cors({credentials: true, origin: true}));
@@ -26,7 +24,5 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 
 app.use("/api/milk-batches", milkBatchRoutes);
-
-app.use("/api/quality-tests", milkQualityRoutes);
 
 module.exports = app;

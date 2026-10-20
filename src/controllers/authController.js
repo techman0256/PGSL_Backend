@@ -25,12 +25,6 @@ const register = async (req, res) => {
       });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({
-        message: "Password must be at least 8 characters long",
-      });
-    }
-
     const normalizedEmail = email.trim().toLowerCase();
 
     const existingUser = await User.findOne({
@@ -51,13 +45,9 @@ const register = async (req, res) => {
       passwordHash,
       role: "OPERATOR",
     });
-    console.log("user print")
-
-    const token = createToken(user);
 
     return res.status(201).json({
-      message: "Registration successful",
-      token,
+      message: "Registration successful. Please log in.",
       user: {
         id: user._id,
         name: user.name,
@@ -91,7 +81,13 @@ const login = async (req, res) => {
       });
     }
 
-  
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not configured");
+      return res.status(500).json({
+        message: "Server configuration error",
+      });
+    }
+
     const user = await User.findOne({
       email: email.trim().toLowerCase(),
     }).select("+passwordHash");

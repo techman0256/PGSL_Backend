@@ -1,27 +1,9 @@
-
 const mongoose = require("mongoose");
 const MilkBatch = require("../models/MilkBatch");
-const BatchCounter = require("../models/BatchCounter");
-
-const generateBatchId = async (receivedAt) => {
-  const datePart = [
-    receivedAt.getFullYear(),
-    String(receivedAt.getMonth() + 1).padStart(2, "0"),
-    String(receivedAt.getDate()).padStart(2, "0"),
-  ].join("");
-
-  const counter = await BatchCounter.findOneAndUpdate(
-    { _id: datePart },
-    { $inc: { sequence: 1 } },
-    {
-      new: true,
-      upsert: true,
-      setDefaultsOnInsert: true,
-    }
-  );
-
-  return `MR-${datePart}-${String(counter.sequence).padStart(3, "0")}`;
-};
+const MilkQualityTest = require("../models/MilkQualityTest");
+const MilkStorageRecord = require("../models/MilkStorageRecord");
+const Processing = require("../models/Processing");
+const { generateSequenceId } = require("../utils/idGenerator");
 
 // POST /api/milk-batches
 const createMilkBatch = async (req, res) => {
@@ -45,11 +27,11 @@ const createMilkBatch = async (req, res) => {
     const validMilkTypes = ["COW", "GOAT", "BUFFALO", "SAHIWAL"];
     const validShifts = ["MORNING", "EVENING"];
 
-    if (!validMilkTypes.includes(milkType)) {
+    if (!validMilkTypes.includes(milkType.toUpperCase())) {
       return res.status(400).json({ message: "Invalid milk type" });
     }
 
-    if (!validShifts.includes(shift)) {
+    if (!validShifts.includes(shift.toUpperCase())) {
       return res.status(400).json({ message: "Invalid shift" });
     }
 
@@ -60,14 +42,14 @@ const createMilkBatch = async (req, res) => {
       return res.status(400).json({ message: "Invalid date or time" });
     }
 
-    const milkBatchId = await generateBatchId(receivedAt);
+    const milkBatchId = await generateSequenceId("MR", receivedAt);
 
     const batch = await MilkBatch.create({
       milkBatchId,
-      milkType,
-      quantity: mongoose.Types.Decimal128.fromString(String(quantity)),
+      milkType: milkType.toUpperCase(),
+      quantity: mongoose.Types.Decimal128.fromString(String(amount)),
       receivedAt,
-      shift,
+      shift: shift.toUpperCase(),
     });
 
     return res.status(201).json({
@@ -85,10 +67,14 @@ const createMilkBatch = async (req, res) => {
 // GET /api/milk-batches
 const getAllMilkBatches = async (req, res) => {
   try {
-    const batches = await MilkBatch.find()
-      .sort({ receivedAt: -1 })
-      .limit(4)
-      .lean();
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+    const query = MilkBatch.find().sort({ receivedAt: -1 }).lean();
+
+    if (limit && !Number.isNaN(limit) && limit > 0) {
+      query.limit(limit);
+    }
+
+    const batches = await query.exec();
 
     return res.status(200).json({
       count: batches.length,
@@ -117,6 +103,43 @@ const getMilkBatchById = async (req, res) => {
   }
 };
 
+// PUT /api/milk-batches/:id
+const updateMilkBatch = async (req, res) => {
+  try {
+    const { milkType, quantity, date, time, shift } = req.body;
+
+    const batch = await MilkBatch.findById(req.params.id);
+    if (!batch) {
+      return res.status(404).json({ message: "Milk reception not found" });
+    }
+
+    if (milkType) batch.milkType = milkType.toUpperCase();
+    if (quantity != null) {
+      const amount = Number(quantity);
+      if (amount <= 0) {
+        return res.status(400).json({ message: "Quantity must be greater than zero" });
+      }
+      batch.quantity = mongoose.Types.Decimal128.fromString(String(amount));
+    }
+    if (shift) batch.shift = shift.toUpperCase();
+    if (date && time) {
+      const receivedAt = new Date(`${date}T${time}:00`);
+      if (!Number.isNaN(receivedAt.getTime())) {
+        batch.receivedAt = receivedAt;
+      }
+    }
+
+    await batch.save();
+
+    return res.status(200).json({
+      message: "Milk reception updated successfully",
+      batch,
+    });
+  } catch (error) {
+    console.error("Update milk batch error:", error.message);
+    return res.status(500).json({ message: "Failed to update milk reception" });
+  }
+};
 
 // DELETE /api/milk-batches/:id
 const deleteMilkBatch = async (req, res) => {
@@ -130,10 +153,6 @@ const deleteMilkBatch = async (req, res) => {
     }
 
     // Prevent deletion if later stages already reference this batch.
-    const MilkQualityTest = mongoose.model("MilkQualityTest");
-    const MilkStorageRecord = mongoose.model("MilkStorageRecord");
-    const Processing = mongoose.model("Processing");
-
     const [hasTests, hasStorage, hasProcessing] = await Promise.all([
       MilkQualityTest.exists({ milkBatchId: batch._id }),
       MilkStorageRecord.exists({ milkBatchId: batch._id }),
@@ -163,5 +182,7 @@ const deleteMilkBatch = async (req, res) => {
 module.exports = {
   createMilkBatch,
   getAllMilkBatches,
-  getMilkBatchById
+  getMilkBatchById,
+  updateMilkBatch,
+  deleteMilkBatch,
 };

@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const milkBatchSchema = new mongoose.Schema(
@@ -20,7 +19,7 @@ const milkBatchSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Decimal128,
       required: true,
       validate: {
-        validator: (value) => value && value.toString() > "0",
+        validator: (value) => value != null && Number(value.toString()) > 0,
         message: "Quantity must be greater than zero",
       },
     },

@@ -1,7 +1,15 @@
+const mongoose = require("mongoose");
 const MilkQualityTest = require("../models/MilkQualityTest");
 const MilkBatch = require("../models/MilkBatch");
 const MilkStorageRecord = require("../models/MilkStorageRecord");
 const Processing = require("../models/Processing");
+
+const serializeBatch = (batch) => ({
+  ...batch,
+  quantity: batch?.quantity == null
+    ? batch?.quantity
+    : Number(batch.quantity.toString()),
+});
 
 // GET /api/quality-tests/available-batches
 // Returns batches ready for testing (received batches not yet tested)
@@ -17,7 +25,7 @@ const getAvailableBatchesForTesting = async (req, res) => {
 
     return res.status(200).json({
       count: availableBatches.length,
-      batches: availableBatches,
+      batches: availableBatches.map(serializeBatch),
     });
   } catch (error) {
     console.error("Get available batches for testing error:", error.message);
@@ -56,7 +64,9 @@ const createQualityTest = async (req, res) => {
     // Resolve milk batch
     let batch;
     if (milkBatchId) {
-      batch = await MilkBatch.findById(milkBatchId);
+      batch = mongoose.isValidObjectId(milkBatchId)
+        ? await MilkBatch.findById(milkBatchId)
+        : await MilkBatch.findOne({ milkBatchId });
     }
     if (!batch && batchId) {
       batch = await MilkBatch.findOne({ milkBatchId: batchId });

@@ -9,10 +9,12 @@ const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ACCESS_COOKIE = "pgsl_access";
 const REFRESH_COOKIE = "pgsl_refresh";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 const cookieOptions = (maxAge) => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
   path: "/",
   maxAge,
 });

@@ -93,7 +93,42 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// PUT /api/users/:id/role
+// ADMIN only
+const updateUserRole = async (req, res) => {
+  try {
+    const { role } = req.body;
+
+    if (!["ADMIN", "OPERATOR"].includes(role)) {
+      return res.status(400).json({ message: "Role must be ADMIN or OPERATOR" });
+    }
+
+    if (req.params.id === req.user.id && role !== "ADMIN") {
+      return res.status(400).json({ message: "You cannot remove your own admin role" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true, runValidators: true }
+    ).select("name email role isActive");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "User role updated successfully",
+      user,
+    });
+  } catch (error) {
+    console.error("Update user role error:", error.message);
+    return res.status(500).json({ message: "Failed to update user role" });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
+  updateUserRole,
 };

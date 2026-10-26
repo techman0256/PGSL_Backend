@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { protect } = require("../middleware/authMiddleware");
+const { allowRoles } = require("../middleware/roleMiddleware");
 const {
   getAvailableStorageBatches,
   createProcessingBatch,
@@ -18,7 +19,6 @@ router.post("/", createProcessingBatch);
 router.get("/", getAllProcessingBatches);
 router.get("/:id", getProcessingBatchById);
 router.put("/:id", updateProcessingBatch);
-router.delete("/:id", deleteProcessingBatch);
+router.delete("/:id", allowRoles("ADMIN"), deleteProcessingBatch);
 
 module.exports = router;
-

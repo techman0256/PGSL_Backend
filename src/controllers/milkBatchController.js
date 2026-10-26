@@ -5,6 +5,16 @@ const MilkStorageRecord = require("../models/MilkStorageRecord");
 const Processing = require("../models/Processing");
 const { generateSequenceId } = require("../utils/idGenerator");
 
+const serializeBatch = (batch) => {
+  const serialized = batch.toObject ? batch.toObject() : { ...batch };
+  return {
+    ...serialized,
+    quantity: serialized.quantity == null
+      ? serialized.quantity
+      : Number(serialized.quantity.toString()),
+  };
+};
+
 // POST /api/milk-batches
 const createMilkBatch = async (req, res) => {
   try {
@@ -54,7 +64,7 @@ const createMilkBatch = async (req, res) => {
 
     return res.status(201).json({
       message: "Milk reception saved successfully",
-      batch,
+      batch: serializeBatch(batch),
     });
   } catch (error) {
     console.error("Create milk batch error:", error.message);
@@ -74,7 +84,7 @@ const getAllMilkBatches = async (req, res) => {
       query.limit(limit);
     }
 
-    const batches = await query.exec();
+    const batches = (await query.exec()).map(serializeBatch);
 
     return res.status(200).json({
       count: batches.length,
@@ -97,7 +107,7 @@ const getMilkBatchById = async (req, res) => {
       return res.status(404).json({ message: "Milk reception not found" });
     }
 
-    return res.status(200).json({ batch });
+    return res.status(200).json({ batch: serializeBatch(batch) });
   } catch (error) {
     return res.status(400).json({ message: "Invalid milk reception ID" });
   }
@@ -133,7 +143,7 @@ const updateMilkBatch = async (req, res) => {
 
     return res.status(200).json({
       message: "Milk reception updated successfully",
-      batch,
+      batch: serializeBatch(batch),
     });
   } catch (error) {
     console.error("Update milk batch error:", error.message);

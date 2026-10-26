@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { protect } = require("../middleware/authMiddleware");
+const { allowRoles } = require("../middleware/roleMiddleware");
 const {
   getAvailableBatchesForTesting,
   createQualityTest,
@@ -18,7 +19,6 @@ router.post("/", createQualityTest);
 router.get("/", getAllQualityTests);
 router.get("/:id", getQualityTestById);
 router.put("/:id", updateQualityTest);
-router.delete("/:id", deleteQualityTest);
+router.delete("/:id", allowRoles("ADMIN"), deleteQualityTest);
 
 module.exports = router;
-

@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
@@ -13,8 +14,11 @@ const dispatchRoutes = require("./routes/dispatchRoutes");
 
 const app = express();
 
-app.use(cors({ credentials: true, origin: true }));
+const allowedOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+
+app.use(cors({ credentials: true, origin: allowedOrigin }));
 app.use(express.json());
+app.use(cookieParser());
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({

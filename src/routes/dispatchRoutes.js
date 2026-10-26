@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { protect } = require("../middleware/authMiddleware");
+const { allowRoles } = require("../middleware/roleMiddleware");
 const {
   getAvailableProductsForDispatch,
   createDispatch,
@@ -18,6 +19,6 @@ router.post("/", createDispatch);
 router.get("/", getAllDispatches);
 router.get("/:id", getDispatchById);
 router.put("/:id", updateDispatch);
-router.delete("/:id", deleteDispatch);
+router.delete("/:id", allowRoles("ADMIN"), deleteDispatch);
 
 module.exports = router;

@@ -17,6 +17,6 @@ router.post("/", createMilkBatch);
 router.get("/", getAllMilkBatches);
 router.get("/:id", getMilkBatchById);
 router.put("/:id", updateMilkBatch);
-router.delete("/:id", deleteMilkBatch);
+router.delete("/:id", allowRoles("ADMIN"), deleteMilkBatch);
 
 module.exports = router;

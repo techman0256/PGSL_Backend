@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const { protect } = require("../middleware/authMiddleware");
+const { allowRoles } = require("../middleware/roleMiddleware");
 const {
   getAvailableBatchesForStorage,
   createStorageRecord,
@@ -20,7 +21,6 @@ router.post("/", createStorageRecord);
 router.get("/", getAllStorageRecords);
 router.get("/:id", getStorageRecordById);
 router.put("/:id", updateStorageRecord);
-router.delete("/:id", deleteStorageRecord);
+router.delete("/:id", allowRoles("ADMIN"), deleteStorageRecord);
 
 module.exports = router;
-

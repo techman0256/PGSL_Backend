@@ -15,6 +15,7 @@ const dispatchRoutes = require("./routes/dispatchRoutes");
 const app = express();
 
 const allowedOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
+console.log("These are allowed origin ************", allowedOrigin);
 
 app.use(cors({ credentials: true, origin: allowedOrigin }));
 app.use(express.json());

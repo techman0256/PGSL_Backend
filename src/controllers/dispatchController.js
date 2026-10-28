@@ -122,6 +122,7 @@ const createDispatch = async (req, res) => {
       dispatchId,
       product: finishedProduct.product,
       processingBatchId: finishedProduct.processingBatch,
+      finishedProductId: finishedProduct._id,
       quantity: dispatchQty,
       unit: unit || finishedProduct.unit,
       customer: customer.trim(),

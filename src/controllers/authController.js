@@ -60,7 +60,6 @@ const clearAuthCookies = (res) => {
   res.clearCookie(REFRESH_COOKIE, options);
 };
 
-
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;

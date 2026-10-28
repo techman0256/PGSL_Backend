@@ -33,6 +33,11 @@ const finishedProductSchema = new mongoose.Schema(
       trim: true,
     },
 
+    processingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Processing",
+    },
+
     isByProduct: {
       type: Boolean,
       default: false,

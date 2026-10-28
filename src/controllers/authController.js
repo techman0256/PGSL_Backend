@@ -49,9 +49,17 @@ const issueSession = async (res, user) => {
 };
 
 const clearAuthCookies = (res) => {
-  res.clearCookie(ACCESS_COOKIE, { httpOnly: true, sameSite: "lax", path: "/" });
-  res.clearCookie(REFRESH_COOKIE, { httpOnly: true, sameSite: "lax", path: "/" });
+  const options = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/",
+  };
+
+  res.clearCookie(ACCESS_COOKIE, options);
+  res.clearCookie(REFRESH_COOKIE, options);
 };
+
 
 const register = async (req, res) => {
   try {

@@ -7,18 +7,25 @@ const { generateSequenceId } = require("../utils/idGenerator");
 // Returns products available in finished goods inventory with current available stock
 const getAvailableProductsForDispatch = async (req, res) => {
   try {
-    const products = await FinishedProduct.find({ quantity: { $gt: 0 } })
-      .sort({ updatedAt: -1 })
-      .lean();
+    const products = await FinishedProduct.aggregate([
+      { $match: { quantity: { $gt: 0 } } },
+      {
+        $group: {
+          _id: { product: "$product", unit: "$unit" },
+          snapshotQuantity: { $sum: "$snapshotQuantity" },
+          availableQuantity: { $sum: "$quantity" },
+        },
+      },
+      { $sort: { "_id.product": 1, "_id.unit": 1 } },
+    ]);
 
     const formatted = products.map((p) => ({
-      _id: p._id,
-      product: p.product,
-      processingBatchId: p.processingBatch,
+      product: p._id.product,
+      processingBatchId: "AGGREGATED",
       snapshotQuantity: p.snapshotQuantity,
-      availableQuantity: p.quantity,
-      unit: p.unit,
-      displaySnapshot: `${p.snapshotQuantity} ${p.unit} in snapshot · ${p.quantity} ${p.unit} available`,
+      availableQuantity: p.availableQuantity,
+      unit: p._id.unit,
+      displaySnapshot: `${p.snapshotQuantity} ${p._id.unit} produced · ${p.availableQuantity} ${p._id.unit} available`,
     }));
 
     return res.status(200).json({
@@ -75,24 +82,15 @@ const createDispatch = async (req, res) => {
       });
     }
 
-    // 1. Locate Finished Product
-    let finishedProduct;
-    if (product && processingBatchId) {
-      finishedProduct = await FinishedProduct.findOne({
-        product: new RegExp(`^${product.trim()}$`, "i"),
-        processingBatch: processingBatchId.trim(),
-      }).session(session);
-    }
-    if (!finishedProduct && product) {
-      finishedProduct = await FinishedProduct.findOne({
-        product: new RegExp(`^${product.trim()}$`, "i"),
-        quantity: { $gte: dispatchQty },
-      })
-        .sort({ createdAt: 1 })
-        .session(session);
-    }
+    // 1. Locate the central product/unit inventory balance.
+    const finishedProducts = await FinishedProduct.find({
+      product: new RegExp(`^${product?.trim() || ""}$`, "i"),
+      unit: unit || undefined,
+      quantity: { $gt: 0 },
+    }).sort({ createdAt: 1 }).session(session);
+    const totalAvailable = finishedProducts.reduce((total, item) => total + item.quantity, 0);
 
-    if (!finishedProduct) {
+    if (!product || !finishedProducts.length) {
       await session.abortTransaction();
       session.endSession();
       return res.status(404).json({
@@ -100,18 +98,25 @@ const createDispatch = async (req, res) => {
       });
     }
 
-    if (finishedProduct.quantity < dispatchQty) {
+    if (totalAvailable < dispatchQty) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
-        message: `Insufficient inventory. Available: ${finishedProduct.quantity} ${finishedProduct.unit}, Requested: ${dispatchQty} ${finishedProduct.unit}`,
+        message: `Insufficient inventory. Available: ${totalAvailable} ${finishedProducts[0].unit}, Requested: ${dispatchQty} ${finishedProducts[0].unit}`,
       });
     }
 
-    // 2. Deduct from inventory
-    finishedProduct.quantity -= dispatchQty;
-    finishedProduct.lastUpdated = new Date();
-    await finishedProduct.save({ session });
+    // 2. Deduct from the central balance. Legacy duplicate rows are consumed
+    // oldest first until they are consolidated by future processing records.
+    let remainingToDispatch = dispatchQty;
+    for (const inventoryItem of finishedProducts) {
+      const deducted = Math.min(inventoryItem.quantity, remainingToDispatch);
+      inventoryItem.quantity -= deducted;
+      inventoryItem.lastUpdated = new Date();
+      await inventoryItem.save({ session });
+      remainingToDispatch -= deducted;
+      if (remainingToDispatch === 0) break;
+    }
 
     // 3. Generate Dispatch ID: DS-YYYYMMDD-XXX
     const parsedDate = dispatchDate ? new Date(dispatchDate) : new Date();
@@ -120,10 +125,11 @@ const createDispatch = async (req, res) => {
     // 4. Create Dispatch record
     const dispatchRecord = new Dispatch({
       dispatchId,
-      product: finishedProduct.product,
-      processingBatchId: finishedProduct.processingBatch,
+      product: product.trim(),
+      processingBatchId: "AGGREGATED",
+      finishedProductId: finishedProducts[0]._id,
       quantity: dispatchQty,
-      unit: unit || finishedProduct.unit,
+      unit: unit || finishedProducts[0].unit,
       customer: customer.trim(),
       channel,
       dispatchDate: parsedDate,
@@ -228,10 +234,7 @@ const deleteDispatch = async (req, res) => {
 
     // Restore inventory quantity
     await FinishedProduct.findOneAndUpdate(
-      {
-        product: dispatch.product,
-        processingBatch: dispatch.processingBatchId,
-      },
+      { product: new RegExp(`^${dispatch.product}$`, "i"), unit: dispatch.unit },
       {
         $inc: { quantity: dispatch.quantity },
         $set: { lastUpdated: new Date() },

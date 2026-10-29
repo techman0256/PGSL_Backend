@@ -4,26 +4,43 @@ const MilkStorageRecord = require("../models/MilkStorageRecord");
 const MilkBatch = require("../models/MilkBatch");
 const RawMaterial = require("../models/RawMaterial");
 const FinishedProduct = require("../models/FinishedProduct");
-const Dispatch = require("../models/Dispatch");
 const { generateSequenceId } = require("../utils/idGenerator");
 
 // GET /api/processing/available-storage-batches
-// Returns quality-tested milk batches available in Raw Milk Storage
+// Returns quality-tested milk batches available in Raw Milk Storage with remaining milk left > 0
 const getAvailableStorageBatches = async (req, res) => {
   try {
     const records = await MilkStorageRecord.find()
+      .populate("milkBatchId", "milkBatchId milkType quantity milkLeft")
       .sort({ createdAt: -1 })
       .lean();
 
-    const formatted = records.map((r) => ({
-      milkBatchId: r.milkBatchId,
-      batchId: r.batchId,
-      milkType: r.milkType,
-      siloNumber: r.siloNumber,
-      quantity: r.quantity,
-      storageDate: r.storageDate,
-      storageTime: r.storageTime,
-    }));
+    const formatted = [];
+    for (const r of records) {
+      let milkLeft = r.quantity;
+      if (r.milkBatchId) {
+        if (r.milkBatchId.milkLeft != null) {
+          milkLeft = Number(r.milkBatchId.milkLeft.toString());
+        } else if (r.milkBatchId.quantity != null) {
+          milkLeft = Number(r.milkBatchId.quantity.toString());
+        }
+      }
+
+      // Only return batches that still have milk left to process
+      if (milkLeft > 0) {
+        formatted.push({
+          storageRecordId: r._id,
+          milkBatchId: r.milkBatchId?._id || r.milkBatchId,
+          batchId: r.batchId,
+          milkType: r.milkType,
+          siloNumber: r.siloNumber,
+          quantity: r.quantity,
+          milkLeft,
+          storageDate: r.storageDate,
+          storageTime: r.storageTime,
+        });
+      }
+    }
 
     return res.status(200).json({
       count: formatted.length,
@@ -101,7 +118,35 @@ const createProcessingBatch = async (req, res) => {
       });
     }
 
-    // 2. Deduct Raw Materials from inventory if used
+    // 2. Integrity check: Verify milkLeft in MilkBatch
+    const milkBatch = await MilkBatch.findById(storageRecord.milkBatchId).session(session);
+
+    if (!milkBatch) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({
+        message: "Associated milk reception batch not found",
+      });
+    }
+
+    const currentMilkLeft = milkBatch.milkLeft != null
+      ? Number(milkBatch.milkLeft.toString())
+      : Number(milkBatch.quantity.toString());
+
+    if (inQty > currentMilkLeft) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        message: `Input quantity (${inQty} L) exceeds milk left in batch ${milkBatch.milkBatchId} (${currentMilkLeft} L).`,
+      });
+    }
+
+    // 3. Deduct input quantity from milkBatch.milkLeft
+    const remainingMilk = currentMilkLeft - inQty;
+    milkBatch.milkLeft = mongoose.Types.Decimal128.fromString(remainingMilk.toFixed(2));
+    await milkBatch.save({ session });
+
+    // 4. Deduct Raw Materials from inventory if used
     for (const item of rawMaterialsUsed) {
       if (!item.material || item.quantityUsed == null || item.quantityUsed <= 0) continue;
 
@@ -116,11 +161,11 @@ const createProcessingBatch = async (req, res) => {
       }
     }
 
-    // 3. Generate Processing Batch ID: MP-YYYYMMDD-XXX
+    // 5. Generate Processing Batch ID: MP-YYYYMMDD-XXX
     const parsedDate = processingDate ? new Date(processingDate) : new Date();
     const processingId = await generateSequenceId("MP", parsedDate);
 
-    // 4. Create Processing record
+    // 6. Create Processing record
     const processingRecord = new Processing({
       processingId,
       milkBatchId: storageRecord.milkBatchId,
@@ -150,23 +195,18 @@ const createProcessingBatch = async (req, res) => {
 
     await processingRecord.save({ session });
 
-    // 5. Automatically add Finished Product to Finished Goods Inventory
-    await FinishedProduct.create(
-      [
-        {
-          product: productType.trim(),
-          quantity: outQty,
-          snapshotQuantity: outQty,
-          unit: outputUnit === "Kg" ? "Kg" : "L",
-          processingBatch: processingId,
-          isByProduct: false,
-          lastUpdated: new Date(),
-        },
-      ],
-      { session }
+    // 5. Add finished product to the central product/unit inventory balance.
+    const inventoryUnit = outputUnit === "Kg" ? "Kg" : "L";
+    await FinishedProduct.findOneAndUpdate(
+      { product: productType.trim(), unit: inventoryUnit, isByProduct: false },
+      {
+        $inc: { quantity: outQty, snapshotQuantity: outQty },
+        $set: { lastUpdated: new Date(), processingBatch: "AGGREGATED" },
+      },
+      { upsert: true, new: true, session, setDefaultsOnInsert: true }
     );
 
-    // 6. Automatically add By-Products to Finished Goods Inventory
+    // 8. Automatically add By-Products to Finished Goods Inventory
     if (byProducts && byProducts.length > 0) {
       const byProductDocs = byProducts
         .filter((bp) => bp.byProduct && Number(bp.quantity) > 0)
@@ -180,8 +220,22 @@ const createProcessingBatch = async (req, res) => {
           lastUpdated: new Date(),
         }));
 
-      if (byProductDocs.length > 0) {
-        await FinishedProduct.insertMany(byProductDocs, { session });
+      for (const byProduct of byProductDocs) {
+        await FinishedProduct.findOneAndUpdate(
+          {
+            product: byProduct.product,
+            unit: byProduct.unit,
+            isByProduct: true,
+          },
+          {
+            $inc: {
+              quantity: byProduct.quantity,
+              snapshotQuantity: byProduct.snapshotQuantity,
+            },
+            $set: { lastUpdated: new Date(), processingBatch: "AGGREGATED" },
+          },
+          { upsert: true, new: true, session, setDefaultsOnInsert: true }
+        );
       }
     }
 
@@ -191,6 +245,7 @@ const createProcessingBatch = async (req, res) => {
     return res.status(201).json({
       message: "Processing batch saved successfully",
       batch: processingRecord,
+      milkLeft: remainingMilk,
     });
   } catch (error) {
     await session.abortTransaction();
@@ -293,7 +348,20 @@ const deleteProcessingBatch = async (req, res) => {
       });
     }
 
-    // 1. Revert raw materials used
+    // 1. Revert milkLeft in MilkBatch
+    if (batch.milkBatchId) {
+      const milkBatch = await MilkBatch.findById(batch.milkBatchId).session(session);
+      if (milkBatch) {
+        const curLeft = milkBatch.milkLeft != null
+          ? Number(milkBatch.milkLeft.toString())
+          : 0;
+        const restoredLeft = curLeft + batch.inputQuantity;
+        milkBatch.milkLeft = mongoose.Types.Decimal128.fromString(restoredLeft.toFixed(2));
+        await milkBatch.save({ session });
+      }
+    }
+
+    // 2. Revert raw materials used
     for (const item of batch.rawMaterialsUsed) {
       await RawMaterial.findOneAndUpdate(
         { material: new RegExp(`^${item.material}$`, "i") },
@@ -302,13 +370,43 @@ const deleteProcessingBatch = async (req, res) => {
       );
     }
 
-    // 2. Remove finished products created from inventory
-    await FinishedProduct.deleteMany(
-      { processingBatch: batch.processingId },
-      { session }
-    );
+    // 2. Remove this batch's quantities from central finished-goods balances.
+    const productsToRevert = [
+      {
+        product: batch.productType,
+        quantity: batch.outputQuantity,
+        unit: batch.outputUnit,
+        isByProduct: false,
+      },
+      ...batch.byProducts.map((item) => ({
+        product: item.byProduct,
+        quantity: item.quantity,
+        unit: item.unit,
+        isByProduct: true,
+      })),
+    ];
 
-    // 3. Delete processing record
+    for (const item of productsToRevert) {
+      const inventoryProduct = await FinishedProduct.findOne({
+        product: item.product,
+        unit: item.unit,
+        isByProduct: item.isByProduct,
+      }).session(session);
+
+      if (!inventoryProduct || inventoryProduct.quantity < item.quantity) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(409).json({
+          message: `Cannot delete processing batch because ${item.product} inventory has already been consumed.`,
+        });
+      }
+
+      inventoryProduct.quantity -= item.quantity;
+      inventoryProduct.lastUpdated = new Date();
+      await inventoryProduct.save({ session });
+    }
+
+    // 4. Delete processing record
     await batch.deleteOne({ session });
 
     await session.commitTransaction();

@@ -45,9 +45,38 @@ const getInventorySummary = async (req, res) => {
 // GET /api/inventory/finished-products
 const getFinishedProducts = async (req, res) => {
   try {
-    const products = await FinishedProduct.find()
-      .sort({ updatedAt: -1 })
-      .lean();
+    const products = await FinishedProduct.aggregate([
+      {
+        $group: {
+          _id: { product: "$product", unit: "$unit", isByProduct: "$isByProduct" },
+          quantity: { $sum: "$quantity" },
+          snapshotQuantity: { $sum: "$snapshotQuantity" },
+          lastUpdated: { $max: "$lastUpdated" },
+        },
+      },
+      { $sort: { lastUpdated: -1 } },
+      {
+        $project: {
+          _id: 0,
+          id: {
+            $concat: [
+              "$_id.product",
+              "-",
+              "$_id.unit",
+              "-",
+              { $cond: ["$_id.isByProduct", "by-product", "main-product"] },
+            ],
+          },
+          product: "$_id.product",
+          unit: "$_id.unit",
+          isByProduct: "$_id.isByProduct",
+          quantity: 1,
+          snapshotQuantity: 1,
+          lastUpdated: 1,
+          processingBatch: "AGGREGATED",
+        },
+      },
+    ]);
 
     return res.status(200).json({
       count: products.length,

@@ -52,6 +52,11 @@ const processingSchema = new mongoose.Schema(
       ref: "MilkBatch",
     },
 
+    storageRecordId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MilkStorageRecord",
+    },
+
     inputMilkBatch: {
       type: String,
       required: true,

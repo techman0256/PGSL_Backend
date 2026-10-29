@@ -169,6 +169,7 @@ const createProcessingBatch = async (req, res) => {
     const processingRecord = new Processing({
       processingId,
       milkBatchId: storageRecord.milkBatchId,
+      storageRecordId: storageRecord._id,
       inputMilkBatch: storageRecord.batchId,
       milkType: storageRecord.milkType.replace(/ Milk$/i, ""),
       inputQuantity: inQty,
@@ -216,6 +217,7 @@ const createProcessingBatch = async (req, res) => {
           snapshotQuantity: Number(bp.quantity),
           unit: bp.unit === "Kg" ? "Kg" : "L",
           processingBatch: processingId,
+          processingId: processingRecord._id,
           isByProduct: true,
           lastUpdated: new Date(),
         }));

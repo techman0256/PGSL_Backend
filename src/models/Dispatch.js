@@ -21,6 +21,11 @@ const dispatchSchema = new mongoose.Schema(
       trim: true,
     },
 
+    finishedProductId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "FinishedProduct",
+    },
+
     quantity: {
       type: Number,
       required: true,

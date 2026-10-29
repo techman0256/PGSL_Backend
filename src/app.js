@@ -10,6 +10,7 @@ const rawMilkStorageRoutes = require("./routes/rawMilkStorageRoutes");
 const processingRoutes = require("./routes/processingRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
+const traceabilityRoutes = require("./routes/traceabilityRoutes");
 //const dashboardRoutes = require("./routes/dashboardRoutes");
 
 const app = express();
@@ -38,6 +39,7 @@ app.use("/api/raw-milk-storage", rawMilkStorageRoutes);
 app.use("/api/processing", processingRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/dispatches", dispatchRoutes);
+app.use("/api/traceability", traceabilityRoutes);
 //app.use("/api/dashboard", dashboardRoutes);
 
 // Catch-all 404 handler

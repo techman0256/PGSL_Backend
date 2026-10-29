@@ -4,7 +4,6 @@ const MilkStorageRecord = require("../models/MilkStorageRecord");
 const MilkBatch = require("../models/MilkBatch");
 const RawMaterial = require("../models/RawMaterial");
 const FinishedProduct = require("../models/FinishedProduct");
-const Dispatch = require("../models/Dispatch");
 const { generateSequenceId } = require("../utils/idGenerator");
 
 // GET /api/processing/available-storage-batches
@@ -196,20 +195,15 @@ const createProcessingBatch = async (req, res) => {
 
     await processingRecord.save({ session });
 
-    // 7. Automatically add Finished Product to Finished Goods Inventory
-    await FinishedProduct.create(
-      [
-        {
-          product: productType.trim(),
-          quantity: outQty,
-          snapshotQuantity: outQty,
-          unit: outputUnit === "Kg" ? "Kg" : "L",
-          processingBatch: processingId,
-          isByProduct: false,
-          lastUpdated: new Date(),
-        },
-      ],
-      { session }
+    // 5. Add finished product to the central product/unit inventory balance.
+    const inventoryUnit = outputUnit === "Kg" ? "Kg" : "L";
+    await FinishedProduct.findOneAndUpdate(
+      { product: productType.trim(), unit: inventoryUnit, isByProduct: false },
+      {
+        $inc: { quantity: outQty, snapshotQuantity: outQty },
+        $set: { lastUpdated: new Date(), processingBatch: "AGGREGATED" },
+      },
+      { upsert: true, new: true, session, setDefaultsOnInsert: true }
     );
 
     // 8. Automatically add By-Products to Finished Goods Inventory
@@ -226,8 +220,22 @@ const createProcessingBatch = async (req, res) => {
           lastUpdated: new Date(),
         }));
 
-      if (byProductDocs.length > 0) {
-        await FinishedProduct.insertMany(byProductDocs, { session });
+      for (const byProduct of byProductDocs) {
+        await FinishedProduct.findOneAndUpdate(
+          {
+            product: byProduct.product,
+            unit: byProduct.unit,
+            isByProduct: true,
+          },
+          {
+            $inc: {
+              quantity: byProduct.quantity,
+              snapshotQuantity: byProduct.snapshotQuantity,
+            },
+            $set: { lastUpdated: new Date(), processingBatch: "AGGREGATED" },
+          },
+          { upsert: true, new: true, session, setDefaultsOnInsert: true }
+        );
       }
     }
 
@@ -362,11 +370,41 @@ const deleteProcessingBatch = async (req, res) => {
       );
     }
 
-    // 3. Remove finished products created from inventory
-    await FinishedProduct.deleteMany(
-      { processingBatch: batch.processingId },
-      { session }
-    );
+    // 2. Remove this batch's quantities from central finished-goods balances.
+    const productsToRevert = [
+      {
+        product: batch.productType,
+        quantity: batch.outputQuantity,
+        unit: batch.outputUnit,
+        isByProduct: false,
+      },
+      ...batch.byProducts.map((item) => ({
+        product: item.byProduct,
+        quantity: item.quantity,
+        unit: item.unit,
+        isByProduct: true,
+      })),
+    ];
+
+    for (const item of productsToRevert) {
+      const inventoryProduct = await FinishedProduct.findOne({
+        product: item.product,
+        unit: item.unit,
+        isByProduct: item.isByProduct,
+      }).session(session);
+
+      if (!inventoryProduct || inventoryProduct.quantity < item.quantity) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(409).json({
+          message: `Cannot delete processing batch because ${item.product} inventory has already been consumed.`,
+        });
+      }
+
+      inventoryProduct.quantity -= item.quantity;
+      inventoryProduct.lastUpdated = new Date();
+      await inventoryProduct.save({ session });
+    }
 
     // 4. Delete processing record
     await batch.deleteOne({ session });

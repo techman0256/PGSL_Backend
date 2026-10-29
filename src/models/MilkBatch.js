@@ -24,6 +24,15 @@ const milkBatchSchema = new mongoose.Schema(
       },
     },
 
+    milkLeft: {
+      type: mongoose.Schema.Types.Decimal128,
+      required: true,
+      validate: {
+        validator: (value) => value != null && Number(value.toString()) >= 0,
+        message: "Milk left cannot be negative",
+      },
+    },
+
     receivedAt: {
       type: Date,
       required: true,
@@ -39,5 +48,11 @@ const milkBatchSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+milkBatchSchema.pre("validate", function () {
+  if (this.isNew && this.milkLeft == null && this.quantity != null) {
+    this.milkLeft = this.quantity;
+  }
+});
 
 module.exports = mongoose.model("MilkBatch", milkBatchSchema);

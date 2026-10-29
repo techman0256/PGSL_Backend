@@ -7,11 +7,17 @@ const { generateSequenceId } = require("../utils/idGenerator");
 
 const serializeBatch = (batch) => {
   const serialized = batch.toObject ? batch.toObject() : { ...batch };
+  const quantity = serialized.quantity == null
+    ? serialized.quantity
+    : Number(serialized.quantity.toString());
+  const milkLeft = serialized.milkLeft == null
+    ? quantity
+    : Number(serialized.milkLeft.toString());
+
   return {
     ...serialized,
-    quantity: serialized.quantity == null
-      ? serialized.quantity
-      : Number(serialized.quantity.toString()),
+    quantity,
+    milkLeft,
   };
 };
 
@@ -58,6 +64,7 @@ const createMilkBatch = async (req, res) => {
       milkBatchId,
       milkType: milkType.toUpperCase(),
       quantity: mongoose.Types.Decimal128.fromString(String(amount)),
+      milkLeft: mongoose.Types.Decimal128.fromString(String(amount)),
       receivedAt,
       shift: shift.toUpperCase(),
     });
@@ -84,11 +91,11 @@ const getAllMilkBatches = async (req, res) => {
       query.limit(limit);
     }
 
-    const batches = (await query.exec()).map(serializeBatch);
+    const batches = await query.exec();
 
     return res.status(200).json({
       count: batches.length,
-      batches,
+      batches: batches.map(serializeBatch),
     });
   } catch (error) {
     console.error("Get milk batches error:", error.message);
@@ -129,7 +136,19 @@ const updateMilkBatch = async (req, res) => {
       if (amount <= 0) {
         return res.status(400).json({ message: "Quantity must be greater than zero" });
       }
+
+      const currentQty = batch.quantity != null ? Number(batch.quantity.toString()) : 0;
+      const currentLeft = batch.milkLeft != null ? Number(batch.milkLeft.toString()) : currentQty;
+      const usedMilk = Math.max(0, currentQty - currentLeft);
+
+      if (amount < usedMilk) {
+        return res.status(400).json({
+          message: `Cannot reduce quantity below already processed milk (${usedMilk} L)`,
+        });
+      }
+
       batch.quantity = mongoose.Types.Decimal128.fromString(String(amount));
+      batch.milkLeft = mongoose.Types.Decimal128.fromString(String(amount - usedMilk));
     }
     if (shift) batch.shift = shift.toUpperCase();
     if (date && time) {

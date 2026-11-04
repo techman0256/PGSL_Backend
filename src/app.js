@@ -11,12 +11,12 @@ const processingRoutes = require("./routes/processingRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const dispatchRoutes = require("./routes/dispatchRoutes");
 const traceabilityRoutes = require("./routes/traceabilityRoutes");
-//const dashboardRoutes = require("./routes/dashboardRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
 const app = express();
 
 const allowedOrigin = process.env.FRONTEND_ORIGIN || "http://localhost:5173";
-console.log("These are allowed origin ************", allowedOrigin);
+// console.log("These are allowed origin ************", allowedOrigin);
 
 app.use(cors({ credentials: true, origin: allowedOrigin }));
 app.use(express.json());
@@ -40,7 +40,7 @@ app.use("/api/processing", processingRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/dispatches", dispatchRoutes);
 app.use("/api/traceability", traceabilityRoutes);
-//app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Catch-all 404 handler
 app.use((req, res) => {

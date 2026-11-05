@@ -64,20 +64,80 @@ const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name?.trim() || !email?.trim() || !password) {
-      return res.status(400).json({ message: "Name, email and password are required" });
+    // Required field validation
+    if (
+      typeof name !== "string" ||
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !name.trim() ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        message: "Name, email and password are required",
+      });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const existingUser = await User.findOne({ email: normalizedEmail });
-    if (existingUser) {
-      return res.status(409).json({ message: "An account with this email already exists" });
+
+    // Allowed email domains
+    const allowedDomains = [
+      "gmail.com",
+      "iitrpr.ac.in",
+      "gadvasu.ac.in",
+      "pgsl",
+    ];
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+$/;
+
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({
+        message: "Please enter a valid email address",
+      });
     }
 
+    // Email domain validation
+    const emailParts = normalizedEmail.split("@");
+    const emailDomain = emailParts[1];
+
+    if (!allowedDomains.includes(emailDomain)) {
+      return res.status(400).json({
+        message:
+          "Only Gmail, IIT Ropar, GADVASU and PGSL email addresses are allowed.",
+      });
+    }
+
+    // Password validation
+    const passwordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=])[A-Za-z\d@$!%*?&#^()_+\-=]{8,128}$/;
+
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        message:
+          "Password must be 8-128 characters long and contain at least one uppercase letter, one lowercase letter, one number and one special character.",
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "An account with this email already exists",
+      });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // Create user
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
-      passwordHash: await bcrypt.hash(password, 12),
+      passwordHash,
       role: "OPERATOR",
     });
 
@@ -85,12 +145,19 @@ const register = async (req, res) => {
       message: "Registration successful. Please log in.",
       user: userResponse(user),
     });
+
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(409).json({ message: "An account with this email already exists" });
+      return res.status(409).json({
+        message: "An account with this email already exists",
+      });
     }
+
     console.error("Registration error:", error.message);
-    return res.status(500).json({ message: "Failed to register user" });
+
+    return res.status(500).json({
+      message: "Failed to register user",
+    });
   }
 };
 

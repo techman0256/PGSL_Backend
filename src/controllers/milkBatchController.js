@@ -152,7 +152,7 @@ const deleteMilkBatch = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete milk batch error:", error.message);
-    return res.status(400).json({
+    return res.status(500).json({
       message: "Failed to delete milk reception",
     });
   }

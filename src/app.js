@@ -53,9 +53,15 @@ app.use((req, res) => {
 // Centralized error handler
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
-  res.status(err.status || 500).json({
+  const status = err.status || (err.name === "ValidationError" || err.name === "CastError" ? 400 : 500);
+  const message =
+    status >= 500
+      ? "Internal server error"
+      : err.message || "Request could not be completed";
+
+  res.status(status).json({
     success: false,
-    message: err.message || "Internal server error",
+    message,
   });
 });
 

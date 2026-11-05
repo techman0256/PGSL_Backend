@@ -295,7 +295,7 @@ const createProcessingBatch = async (req, res) => {
     session.endSession();
     console.error("Create processing batch error:", error.message);
     return res.status(500).json({
-      message: "Failed to save processing batch: " + error.message,
+      message: "Failed to save processing batch",
     });
   }
 };

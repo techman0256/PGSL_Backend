@@ -114,6 +114,48 @@ const getRawMaterials = async (req, res) => {
   }
 };
 
+// POST /api/inventory/finished-products
+const addFinishedProduct = async (req, res) => {
+  try {
+    const { product, unit, quantity } = req.body;
+
+    if (!product || !unit || quantity == null) {
+      return res.status(400).json({ message: "Product name, quantity and unit are required" });
+    }
+    const initialQuantity = Number(quantity);
+    if (!Number.isFinite(initialQuantity) || initialQuantity < 0) {
+      return res.status(400).json({ message: "Product quantity cannot be negative" });
+    }
+
+    const existing = await FinishedProduct.findOne({
+      product: new RegExp(`^${product.trim()}$`, "i"),
+      unit: unit.trim(),
+      isByProduct: false,
+    });
+
+    if (existing) {
+      return res.status(409).json({ message: "Finished product already exists" });
+    }
+
+    const finishedProduct = await FinishedProduct.create({
+      product: product.trim(),
+      quantity: initialQuantity,
+      snapshotQuantity: initialQuantity,
+      unit: unit.trim(),
+      processingBatch: "MANUAL",
+      isByProduct: false,
+    });
+
+    return res.status(201).json({
+      message: "Finished product added successfully",
+      product: finishedProduct,
+    });
+  } catch (error) {
+    console.error("Add finished product error:", error.message);
+    return res.status(500).json({ message: "Failed to add finished product" });
+  }
+};
+
 // POST /api/inventory/raw-materials
 const addRawMaterial = async (req, res) => {
   try {
@@ -200,6 +242,7 @@ const deleteRawMaterial = async (req, res) => {
 module.exports = {
   getInventorySummary,
   getFinishedProducts,
+  addFinishedProduct,
   getRawMaterials,
   addRawMaterial,
   updateRawMaterial,

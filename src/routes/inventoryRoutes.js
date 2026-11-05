@@ -6,6 +6,7 @@ const { allowRoles } = require("../middleware/roleMiddleware");
 const {
   getInventorySummary,
   getFinishedProducts,
+  addFinishedProduct,
   getRawMaterials,
   addRawMaterial,
   updateRawMaterial,
@@ -16,6 +17,7 @@ router.use(protect);
 
 router.get("/summary", getInventorySummary);
 router.get("/finished-products", getFinishedProducts);
+router.post("/finished-products", addFinishedProduct);
 router.get("/raw-materials", getRawMaterials);
 router.post("/raw-materials", addRawMaterial);
 router.put("/raw-materials/:id", updateRawMaterial);

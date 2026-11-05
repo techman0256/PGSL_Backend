@@ -150,7 +150,7 @@ const createDispatch = async (req, res) => {
     session.endSession();
     console.error("Create dispatch error:", error.message);
     return res.status(500).json({
-      message: "Failed to create dispatch: " + error.message,
+      message: "Failed to create dispatch",
     });
   }
 };

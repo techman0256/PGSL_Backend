@@ -120,6 +120,44 @@ const getMilkBatchById = async (req, res) => {
   }
 };
 
+// DELETE /api/milk-batches/:id
+const deleteMilkBatch = async (req, res) => {
+  try {
+    const batch = await MilkBatch.findById(req.params.id);
+
+    if (!batch) {
+      return res.status(404).json({
+        message: "Milk reception not found",
+      });
+    }
+
+    // Prevent deletion if later stages already reference this batch.
+    const [hasTests, hasStorage, hasProcessing] = await Promise.all([
+      MilkQualityTest.exists({ milkBatchId: batch._id }),
+      MilkStorageRecord.exists({ milkBatchId: batch._id }),
+      Processing.exists({ milkBatchId: batch._id }),
+    ]);
+
+    if (hasTests || hasStorage || hasProcessing) {
+      return res.status(409).json({
+        message:
+          "This reception is linked to later processing stages and cannot be deleted.",
+      });
+    }
+
+    await batch.deleteOne();
+
+    return res.status(200).json({
+      message: "Milk reception deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete milk batch error:", error.message);
+    return res.status(400).json({
+      message: "Failed to delete milk reception",
+    });
+  }
+};
+
 // PUT /api/milk-batches/:id
 const updateMilkBatch = async (req, res) => {
   try {
@@ -167,44 +205,6 @@ const updateMilkBatch = async (req, res) => {
   } catch (error) {
     console.error("Update milk batch error:", error.message);
     return res.status(500).json({ message: "Failed to update milk reception" });
-  }
-};
-
-// DELETE /api/milk-batches/:id
-const deleteMilkBatch = async (req, res) => {
-  try {
-    const batch = await MilkBatch.findById(req.params.id);
-
-    if (!batch) {
-      return res.status(404).json({
-        message: "Milk reception not found",
-      });
-    }
-
-    // Prevent deletion if later stages already reference this batch.
-    const [hasTests, hasStorage, hasProcessing] = await Promise.all([
-      MilkQualityTest.exists({ milkBatchId: batch._id }),
-      MilkStorageRecord.exists({ milkBatchId: batch._id }),
-      Processing.exists({ milkBatchId: batch._id }),
-    ]);
-
-    if (hasTests || hasStorage || hasProcessing) {
-      return res.status(409).json({
-        message:
-          "This reception is linked to later processing stages and cannot be deleted.",
-      });
-    }
-
-    await batch.deleteOne();
-
-    return res.status(200).json({
-      message: "Milk reception deleted successfully",
-    });
-  } catch (error) {
-    console.error("Delete milk batch error:", error.message);
-    return res.status(400).json({
-      message: "Failed to delete milk reception",
-    });
   }
 };
 

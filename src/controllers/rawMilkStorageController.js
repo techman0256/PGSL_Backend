@@ -105,8 +105,14 @@ const createStorageRecord = async (req, res) => {
     const batchQty = Number(batch.quantity ? batch.quantity.toString() : 0);
     const storeQuantity = quantity != null ? Number(quantity) : batchQty;
 
-    if (storeQuantity <= 0) {
+    if (!Number.isFinite(storeQuantity) || storeQuantity <= 0) {
       return res.status(400).json({ message: "Storage quantity must be greater than zero" });
+    }
+
+    if (storeQuantity > batchQty) {
+      return res.status(400).json({
+        message: `Storage quantity cannot exceed the received batch quantity (${batchQty} L).`,
+      });
     }
 
     const storageRecord = await MilkStorageRecord.create({

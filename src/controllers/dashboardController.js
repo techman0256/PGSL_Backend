@@ -130,7 +130,7 @@ const getDashboardSummary = async (req, res) => {
     });
   } catch (error) {
     console.error("Get dashboard summary error:", error.message);
-    return res.status(400).json({ message: error.message || "Failed to fetch dashboard summary" });
+    return res.status(500).json({ message: "Failed to fetch dashboard summary" });
   }
 };
 

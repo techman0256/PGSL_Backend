@@ -16,7 +16,8 @@ router.use(protect);
 router.post("/", createMilkBatch);
 router.get("/", getAllMilkBatches);
 router.get("/:id", getMilkBatchById);
-router.put("/:id", updateMilkBatch);
+// Reception corrections use delete-and-re-add; retain the controller for future use.
+// router.put("/:id", updateMilkBatch);
 router.delete("/:id", allowRoles("ADMIN"), deleteMilkBatch);
 
 module.exports = router;

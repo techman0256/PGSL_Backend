@@ -4,6 +4,7 @@ const MilkStorageRecord = require("../models/MilkStorageRecord");
 const MilkBatch = require("../models/MilkBatch");
 const RawMaterial = require("../models/RawMaterial");
 const FinishedProduct = require("../models/FinishedProduct");
+const Dispatch = require("../models/Dispatch");
 const { generateSequenceId } = require("../utils/idGenerator");
 
 // GET /api/processing/available-storage-batches
@@ -85,13 +86,13 @@ const createProcessingBatch = async (req, res) => {
     const inQty = Number(inputQuantity);
     const outQty = Number(outputQuantity);
 
-    if (!inQty || inQty <= 0) {
+    if (!Number.isFinite(inQty) || inQty <= 0) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: "Input quantity must be greater than zero" });
     }
 
-    if (!outQty || outQty <= 0) {
+    if (!Number.isFinite(outQty) || outQty <= 0) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: "Output quantity must be greater than zero" });
@@ -103,6 +104,36 @@ const createProcessingBatch = async (req, res) => {
       return res.status(400).json({
         message: "Product type and processing time are required",
       });
+    }
+
+    if (!Array.isArray(rawMaterialsUsed) || !Array.isArray(byProducts)) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        message: "Raw materials and by-products must be lists.",
+      });
+    }
+
+    for (const item of rawMaterialsUsed) {
+      const quantityUsed = Number(item?.quantityUsed);
+      if (!item?.material?.trim() || !Number.isFinite(quantityUsed) || quantityUsed <= 0) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          message: "Each raw material must have a name and a quantity greater than zero.",
+        });
+      }
+    }
+
+    for (const item of byProducts) {
+      const quantity = Number(item?.quantity);
+      if (!item?.byProduct?.trim() || !Number.isFinite(quantity) || quantity <= 0) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          message: "Each by-product must have a name and a quantity greater than zero.",
+        });
+      }
     }
 
     // 1. Find storage record
@@ -148,16 +179,26 @@ const createProcessingBatch = async (req, res) => {
 
     // 4. Deduct Raw Materials from inventory if used
     for (const item of rawMaterialsUsed) {
-      if (!item.material || item.quantityUsed == null || item.quantityUsed <= 0) continue;
+      const quantityUsed = Number(item.quantityUsed);
+      const escapedMaterial = item.material.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const rawMat = await RawMaterial.findOneAndUpdate(
+        {
+          material: new RegExp(`^${escapedMaterial}$`, "i"),
+          availableQuantity: { $gte: quantityUsed },
+        },
+        {
+          $inc: { availableQuantity: -quantityUsed },
+          $set: { lastUsed: new Date() },
+        },
+        { new: true, session }
+      );
 
-      const rawMat = await RawMaterial.findOne({
-        material: new RegExp(`^${item.material.trim()}$`, "i"),
-      }).session(session);
-
-      if (rawMat) {
-        rawMat.availableQuantity = Math.max(0, rawMat.availableQuantity - Number(item.quantityUsed));
-        rawMat.lastUsed = new Date();
-        await rawMat.save({ session });
+      if (!rawMat) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({
+          message: `Insufficient inventory for raw material "${item.material.trim()}".`,
+        });
       }
     }
 
@@ -254,7 +295,7 @@ const createProcessingBatch = async (req, res) => {
     session.endSession();
     console.error("Create processing batch error:", error.message);
     return res.status(500).json({
-      message: "Failed to save processing batch: " + error.message,
+      message: "Failed to save processing batch",
     });
   }
 };
